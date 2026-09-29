@@ -81,6 +81,26 @@
       color: rgba(216, 235, 232, 0.72);
       font-size: 0.92rem;
     }
+    .topnav {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .topnav a {
+      text-decoration: none;
+      color: var(--foam);
+      padding: 0.32rem 0.9rem;
+      border-radius: 999px;
+      border: 1px solid rgba(216, 235, 232, 0.35);
+      font-size: 0.86rem;
+      background: rgba(11, 28, 44, 0.35);
+    }
+    .topnav a:hover { border-color: rgba(216, 235, 232, 0.75); }
+    .topnav a.on {
+      background: linear-gradient(135deg, rgba(61, 139, 156, 0.85), rgba(31, 77, 107, 0.95));
+      border-color: rgba(216, 235, 232, 0.65);
+    }
     .user-pill {
       display: flex;
       align-items: center;
@@ -281,6 +301,81 @@
       color: rgba(216, 235, 232, 0.62);
       text-align: center;
     }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem 1rem;
+    }
+    @media (max-width: 780px) { .form-grid { grid-template-columns: 1fr; } }
+    .form-grid .check-label {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      align-self: end;
+      padding-bottom: 0.55rem;
+      white-space: nowrap;
+    }
+    .form-grid .check-label input { width: auto; margin: 0; }
+    .ratio-hint { font-size: 0.86rem; color: #35505a; margin: 0.35rem 0 0.9rem; }
+    .table-wrap { overflow-x: auto; }
+    .mix-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+      background: #fff;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .mix-table th, .mix-table td {
+      padding: 0.55rem 0.7rem;
+      border-bottom: 1px solid #dce8e6;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .mix-table th {
+      background: #e4efed;
+      color: #1f4d6b;
+      font-weight: 650;
+    }
+    .mix-table tr.this-week { background: #f0f8f4; }
+    .mix-table tr.voided { opacity: 0.55; }
+    .cell-sub { display: block; font-size: 0.74rem; color: #6b7c85; }
+    .tag {
+      display: inline-block;
+      padding: 0.08rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      margin-left: 0.25rem;
+      border: 1px solid transparent;
+    }
+    .tag-week { background: #e2f0e9; color: #1a7a5c; border-color: #9fd4c8; }
+    .tag-ok { background: #e2f0e9; color: #1a7a5c; border-color: #9fd4c8; margin-left: 0; }
+    .tag-no { background: #f3e8e4; color: #8a4b2f; border-color: #d8b2a2; margin-left: 0; }
+    .tag-expired { background: #fdeee0; color: #9a5b12; border-color: #e7c494; }
+    .tag-active { background: #e6f0f6; color: #2f6f9a; border-color: #a9cde0; margin-left: 0; }
+    .tag-void { background: #ececec; color: #6b7280; border-color: #c9cfd3; margin-left: 0; }
+    .btn-void {
+      width: auto;
+      margin: 0;
+      padding: 0.22rem 0.7rem;
+      font-size: 0.78rem;
+      background: #fff;
+      color: #8b1e1e;
+      border: 1px solid #d89a9a;
+    }
+    .btn-void:hover { background: #fde8e8; }
+    .mix-badge {
+      display: inline-block;
+      margin-top: 0.4rem;
+      padding: 0.12rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      border: 1px solid transparent;
+    }
+    .mix-badge.qualified { background: rgba(93,206,168,0.18); color: #9be7cb; border-color: rgba(93,206,168,0.55); }
+    .mix-badge.expired { background: rgba(231,196,148,0.18); color: #f0cd96; border-color: rgba(231,196,148,0.55); }
+    .mix-badge.unqualified { background: rgba(216,158,138,0.16); color: #ecc0ae; border-color: rgba(216,158,138,0.5); }
+    .mix-badge.none { background: rgba(216,235,232,0.08); color: rgba(216,235,232,0.7); border-color: rgba(216,235,232,0.3); }
   </style>
 </head>
 <body>
@@ -291,11 +386,15 @@
         <h1>染缸还原台</h1>
         <p class="sub">IndigoVat · 按缸位盯氧化还原，点开记浸染与改状态</p>
       </div>
-      <div class="user-pill">
-        <span>{{ user.username }}</span>
-        <form method="post" action="/logout">
-          <button type="submit">退出</button>
-        </form>
+      <div class="topnav">
+        <a href="/" class="{% if active == 'bay' %}on{% endif %}">缸位还原台</a>
+        <a href="/mix-orders" class="{% if active == 'mix' %}on{% endif %}">兑比单</a>
+        <span class="user-pill">
+          <span>{{ user.username }}{% if user.is_superuser %}（主管）{% else %}（染缸工）{% endif %}</span>
+          <form method="post" action="/logout">
+            <button type="submit">退出</button>
+          </form>
+        </span>
       </div>
     </header>
     {% endif %}

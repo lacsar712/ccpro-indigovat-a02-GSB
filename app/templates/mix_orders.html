@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}还原母液兑比单{% endblock %}
+{% block content %}
+<div x-data="mixPage()" x-init="ratio = computeRatio()">
+  {% if error %}
+  <div class="error-box">{{ error }}</div>
+  {% endif %}
+
+  <div class="panel" style="margin-bottom:1.25rem">
+    <h2>还原母液兑比单</h2>
+    <p class="hint">
+      闲置缸进「还原中」须凭本页<strong>合格</strong>兑比单。规则并行执行：
+      ① <strong>自然周</strong>以周一为起点，同一染缸同一自然周最多保留一张未作废单，
+      只认本周合格单；② <strong>五日新鲜度</strong>，合格单开单日距今超过
+      {{ maxAgeDays }} 个自然日（开单当天记 0 天）即失效。作废单永不作为合格依据。
+      本周 {{ weekMonday }} ~ {{ weekSunday }}。
+    </p>
+
+    <details class="new-form" {% if error %}open{% endif %}>
+      <summary style="cursor:pointer;font-weight:600;color:var(--indigo-deep)">新建兑比单（染缸工）</summary>
+      <form method="post" action="/mix-orders" style="margin-top:0.9rem"
+            @submit="return checkRatio()"
+            @input="ratio = computeRatio()">
+        <div class="form-grid">
+          <label>染缸
+            <select name="vat_id" required>
+              <option value="">请选择染缸</option>
+              {% for v in vats %}
+              <option value="{{ v.id }}" {% if form.vat_id == v.id|string %}selected{% endif %}>
+                {{ v.code }} · {{ v.workshopName }}（{{ v.statusLabel }}）
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>开单日
+            <input type="date" name="issuedOn" required max="{{ today }}"
+                   value="{{ form.issuedOn or today }}">
+          </label>
+          <label>母液（升）
+            <input type="number" name="motherL" step="0.01" min="0.01" required
+                   placeholder="例如 32" x-ref="mother"
+                   value="{{ form.motherL or '' }}">
+          </label>
+          <label>清水（升）
+            <input type="number" name="waterL" step="0.01" min="0.01" required
+                   placeholder="例如 100" x-ref="water"
+                   value="{{ form.waterL or '' }}">
+          </label>
+          <label>化验人
+            <input type="text" name="chemist" maxlength="80" required
+                   placeholder="例如 吴化验" value="{{ form.chemist or '' }}">
+          </label>
+          <label class="check-label">
+            <input type="checkbox" name="isQualified"
+                   {% if form.isQualified == 'on' %}checked{% endif %}>
+            化验合格（合格单才能作为还原依据）
+          </label>
+        </div>
+        <p class="ratio-hint" x-show="ratio !== null" x-cloak>
+          母液占清水 <strong x-text="ratio + '%'"></strong>，
+          上限 40%。
+          <span x-show="ratio > 40" style="color:#8b1e1e">超过 40%，无法开单。</span>
+        </p>
+        <button type="submit">提交兑比单</button>
+      </form>
+    </details>
+  </div>
+
+  <div class="panel">
+    <h2 style="font-size:1.1rem">兑比单列表</h2>
+    <p class="hint">仅本周、未作废、合格的单据可支撑闲置缸改还原中。</p>
+    <div class="table-wrap">
+      <table class="mix-table">
+        <thead>
+          <tr>
+            <th>单号</th><th>染缸</th><th>开单日</th><th>母液升</th><th>清水升</th>
+            <th>占比</th><th>合格</th><th>化验人</th><th>开单人</th><th>状态</th>
+            {% if user.is_superuser %}<th>主管作废</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in orders %}
+          <tr class="{% if o.voided %}voided{% elif o.inThisWeek %}this-week{% endif %}">
+            <td><strong>{{ o.orderNo }}</strong>
+              {% if o.inThisWeek and not o.voided %}<span class="tag tag-week">本周</span>{% endif %}
+            </td>
+            <td>{{ o.vatCode }}<span class="cell-sub">{{ o.workshopName }}</span></td>
+            <td>{{ o.issuedOn }}
+              <span class="cell-sub">{{ o.ageDays }} 天前</span>
+            </td>
+            <td>{{ '%.2f'|format(o.motherL) }}</td>
+            <td>{{ '%.2f'|format(o.waterL) }}</td>
+            <td>{% if o.ratioPct is not none %}{{ o.ratioPct }}%{% endif %}</td>
+            <td>
+              {% if o.qualified %}<span class="tag tag-ok">合格</span>
+              {% else %}<span class="tag tag-no">不合格</span>{% endif %}
+              {% if o.qualified and o.ageDays > maxAgeDays and not o.voided %}
+                <span class="tag tag-expired">逾{{ maxAgeDays }}日</span>
+              {% endif %}
+            </td>
+            <td>{{ o.chemist }}</td>
+            <td>{{ o.createdByName }}</td>
+            <td>
+              {% if o.voided %}
+                <span class="tag tag-void">已作废</span>
+                <span class="cell-sub">{{ o.voidedByName }} · {{ o.voidedAt }}</span>
+              {% else %}
+                <span class="tag tag-active">有效</span>
+              {% endif %}
+            </td>
+            {% if user.is_superuser %}
+            <td>
+              {% if not o.voided %}
+              <form method="post" action="/mix-orders/{{ o.id }}/void"
+                    onsubmit="return confirm('确认作废 {{ o.orderNo }}？作废后不再作为合格依据。');">
+                <button type="submit" class="btn-void">作废</button>
+              </form>
+              {% else %}—{% endif %}
+            </td>
+            {% endif %}
+          </tr>
+          {% else %}
+          <tr><td colspan="11" style="text-align:center;color:#6b7c85;padding:1.2rem">
+            尚无兑比单，点上方「新建兑比单」为闲置缸开单。
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="rule-foot">
+    自然周（周一起）管「本周是否有单」，5 个自然日管「单子是否仍新鲜」，两条规则并行；
+    染缸工开单，主管作废，作废后立即失去合格依据效力。
+  </p>
+</div>
+
+<script>
+  function mixPage() {
+    return {
+      ratio: null,
+      computeRatio() {
+        const m = parseFloat(this.$refs.mother.value);
+        const w = parseFloat(this.$refs.water.value);
+        if (!(m > 0) || !(w > 0)) return null;
+        return Math.round((m / w) * 1000) / 10;
+      },
+      checkRatio() {
+        const r = this.computeRatio();
+        if (r !== null && r > 40) {
+          alert('母液升数超过清水升数的 40%，不能开单。');
+          return false;
+        }
+        return true;
+      },
+    };
+  }
+</script>
+{% endblock %}

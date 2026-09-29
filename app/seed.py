@@ -43,6 +43,21 @@ def ensure_seed_data(db: Session) -> None:
     db.commit()
 
     if db.query(Workshop).first():
+        # 旧库（已初始化过、不重建样例数据）：幂等补一口专供
+        # 「闲置 → 还原中」兑比流程的闲置缸 V-21（本周无合格单）。
+        if not db.query(Vat).filter_by(code="V-21").first():
+            w1 = db.query(Workshop).filter_by(name="蓝靛湾一号坊").first()
+            if w1 is not None:
+                db.add(
+                    Vat(
+                        workshop_id=w1.id,
+                        code="V-21",
+                        dyeType="土靛",
+                        volumeL=Decimal("500.00"),
+                        status=Vat.STATUS_IDLE,
+                    )
+                )
+                db.commit()
         return
 
     w1 = Workshop(name="蓝靛湾一号坊", region="黔东南", notes="晨露还原较快")
@@ -78,7 +93,15 @@ def ensure_seed_data(db: Session) -> None:
         volumeL=Decimal("750.00"),
         status=Vat.STATUS_READY,
     )
-    db.add_all([v1, v2, v3, v4])
+    # 专供「闲置 → 还原中」兑比流程：闲置中，且本周无合格兑比单
+    v5 = Vat(
+        workshop_id=w1.id,
+        code="V-21",
+        dyeType="土靛",
+        volumeL=Decimal("500.00"),
+        status=Vat.STATUS_IDLE,
+    )
+    db.add_all([v1, v2, v3, v4, v5])
     db.flush()
 
     now = datetime.now(timezone.utc)

@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Numeric,
@@ -55,11 +56,37 @@ class Vat(Base):
 
     workshop: Mapped["Workshop"] = relationship(back_populates="vats")
     lots: Mapped[list["DipLot"]] = relationship(back_populates="vat")
+    mix_orders: Mapped[list["MixOrder"]] = relationship(back_populates="vat")
 
     def latest_lot(self) -> Optional["DipLot"]:
         if not self.lots:
             return None
         return sorted(self.lots, key=lambda x: (x.dippedAt, x.id), reverse=True)[0]
+
+
+class MixOrder(Base):
+    """还原母液兑比单：闲置缸进还原中的合格依据。"""
+
+    __tablename__ = "mix_orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    vat_id: Mapped[int] = mapped_column(ForeignKey("vats.id", ondelete="CASCADE"), index=True)
+    issuedOn: Mapped[date] = mapped_column(Date)
+    motherL: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    waterL: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    isQualified: Mapped[bool] = mapped_column(Boolean, default=False)
+    chemist: Mapped[str] = mapped_column(String(80))
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    voided: Mapped[bool] = mapped_column(Boolean, default=False)
+    voided_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    voidedAt: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    createdAt: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    vat: Mapped["Vat"] = relationship(back_populates="mix_orders")
+
+    @property
+    def order_no(self) -> str:
+        return f"M{self.id:04d}"
 
 
 class DipLot(Base):

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 import json
@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.auth import get_current_user
 from app.db import get_db
-from app.models import DipLot, Vat, Workshop
+from app.models import DipLot, MixOrder, Vat, Workshop
+from app.services.mix_orders import MAX_ORDER_AGE_DAYS, week_range
 from app.services.vat_rules import VatRuleError, validate_vat_status_change
 
 router = APIRouter()
@@ -56,7 +57,45 @@ def _spark_points(lots: list[DipLot], width: int = 72, height: int = 28) -> list
     return pts
 
 
-def _vat_payload(vat: Vat) -> dict:
+def _week_mix_map(db: Session) -> dict[int, Optional[MixOrder]]:
+    """每口缸本自然周（周一起）最新一张未作废兑比单（不限合格），用于缸位条提示。"""
+    today = date.today()
+    monday, sunday = week_range(today)
+    rows = (
+        db.query(MixOrder)
+        .filter(
+            MixOrder.voided.is_(False),
+            MixOrder.issuedOn >= monday,
+            MixOrder.issuedOn <= sunday,
+        )
+        .order_by(MixOrder.vat_id, MixOrder.issuedOn.desc(), MixOrder.id.desc())
+        .all()
+    )
+    latest: dict[int, MixOrder] = {}
+    for row in rows:
+        latest.setdefault(row.vat_id, row)
+    return latest
+
+
+def _mix_badge(order: Optional[MixOrder]) -> dict:
+    """缸位条用的本周兑比状态：qualified / expired / unqualified / none。"""
+    today = date.today()
+    if order is None:
+        return {"state": "none", "orderNo": None, "issuedOn": None, "ageDays": None}
+    age = (today - order.issuedOn).days
+    payload = {
+        "orderNo": order.order_no,
+        "issuedOn": order.issuedOn.isoformat(),
+        "ageDays": age,
+    }
+    if not order.isQualified:
+        return {"state": "unqualified", **payload}
+    if age > MAX_ORDER_AGE_DAYS:
+        return {"state": "expired", **payload}
+    return {"state": "qualified", **payload}
+
+
+def _vat_payload(vat: Vat, week_order: Optional[MixOrder] = None) -> dict:
     lots = sorted(vat.lots, key=lambda x: (x.dippedAt, x.id))
     chronological = lots
     latest = lots[-1] if lots else None
@@ -74,6 +113,7 @@ def _vat_payload(vat: Vat) -> dict:
         "lastMeters": float(latest.clothMeters) if latest else None,
         "lastDippedAt": latest.dippedAt.strftime("%Y-%m-%d %H:%M") if latest else None,
         "spark": _spark_points(chronological),
+        "mix": _mix_badge(week_order),
         "recentLots": [
             {
                 "id": l.id,
@@ -102,11 +142,12 @@ def _bay_context(
         .order_by(Vat.code)
         .all()
     )
+    week_orders = _week_mix_map(db)
     return {
         "request": request,
         "user": user,
         "workshops": [{"id": w.id, "name": w.name, "region": w.region} for w in workshops],
-        "vats": [_vat_payload(v) for v in vats],
+        "vats": [_vat_payload(v, week_orders.get(v.id)) for v in vats],
         "filter_workshop": workshop_id,
         "selected_vat": selected_vat,
         "error": error,
@@ -151,7 +192,7 @@ async def bay_vat_status(
     error = None
     try:
         latest = item.latest_lot()
-        validate_vat_status_change(item, status, latest)
+        validate_vat_status_change(db, item, status, latest)
         item.status = status
         db.commit()
         return RedirectResponse(f"/?vat={pk}" + (f"&workshop={ws}" if ws else ""), status_code=303)
