@@ -100,6 +100,26 @@
     .user-pill button:hover {
       background: rgba(216, 235, 232, 0.12);
     }
+    .topnav {
+      display: flex;
+      gap: 0.55rem;
+      margin: 0 0 1.1rem;
+      flex-wrap: wrap;
+    }
+    .topnav a {
+      padding: 0.4rem 1rem;
+      border-radius: 999px;
+      border: 1px solid rgba(216, 235, 232, 0.35);
+      color: var(--foam);
+      text-decoration: none;
+      font-size: 0.88rem;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .topnav a:hover { border-color: rgba(216, 235, 232, 0.7); background: rgba(216, 235, 232, 0.1); }
+    .topnav a.on {
+      background: linear-gradient(135deg, rgba(61, 139, 156, 0.85), rgba(31, 77, 107, 0.95));
+      border-color: rgba(216, 235, 232, 0.65);
+    }
     .chips {
       display: flex;
       flex-wrap: wrap;
@@ -198,6 +218,25 @@
     .st-reducing .status-dot { background: #7eb8d8; box-shadow: 0 0 8px rgba(126, 184, 216, 0.7); }
     .st-ready .status-dot { background: #5dcea8; box-shadow: 0 0 8px rgba(93, 206, 168, 0.65); }
     .status-label { font-size: 0.78rem; opacity: 0.9; }
+    .week-badge {
+      display: inline-block;
+      margin-left: 0.35rem;
+      padding: 0.05rem 0.42rem;
+      border-radius: 999px;
+      font-size: 0.66rem;
+      letter-spacing: 0.02em;
+      vertical-align: middle;
+    }
+    .week-badge.ok {
+      background: rgba(93, 206, 168, 0.22);
+      color: #a8e6d2;
+      border: 1px solid rgba(93, 206, 168, 0.5);
+    }
+    .week-badge.no {
+      background: rgba(107, 124, 133, 0.22);
+      color: rgba(216, 235, 232, 0.72);
+      border: 1px solid rgba(216, 235, 232, 0.28);
+    }
     .spark { display: block; margin-top: 0.25rem; opacity: 0.9; }
     .panel {
       background: linear-gradient(165deg, rgba(244, 248, 247, 0.97), rgba(232, 242, 240, 0.94));
@@ -292,12 +331,16 @@
         <p class="sub">IndigoVat · 按缸位盯氧化还原，点开记浸染与改状态</p>
       </div>
       <div class="user-pill">
-        <span>{{ user.username }}</span>
+        <span>{{ user.username }}{% if user.is_superuser %}（主管）{% else %}（染缸工）{% endif %}</span>
         <form method="post" action="/logout">
           <button type="submit">退出</button>
         </form>
       </div>
     </header>
+    <nav class="topnav" aria-label="主导航">
+      <a href="/" class="{% if active == 'bay' %}on{% endif %}">染缸还原台</a>
+      <a href="/mixing" class="{% if active == 'mixing' %}on{% endif %}">还原母液兑比</a>
+    </nav>
     {% endif %}
     {% block content %}{% endblock %}
   </div>

@@ -11,8 +11,12 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.auth import get_current_user
 from app.db import get_db
-from app.models import DipLot, Vat, Workshop
-from app.services.vat_rules import VatRuleError, validate_vat_status_change
+from app.models import DipLot, ReductionMixOrder, Vat, Workshop
+from app.services.vat_rules import (
+    VatRuleError,
+    natural_week_start,
+    validate_vat_status_change,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -56,7 +60,7 @@ def _spark_points(lots: list[DipLot], width: int = 72, height: int = 28) -> list
     return pts
 
 
-def _vat_payload(vat: Vat) -> dict:
+def _vat_payload(vat: Vat, qualified_order) -> dict:
     lots = sorted(vat.lots, key=lambda x: (x.dippedAt, x.id))
     chronological = lots
     latest = lots[-1] if lots else None
@@ -70,6 +74,11 @@ def _vat_payload(vat: Vat) -> dict:
         "statusLabel": STATUS_LABELS.get(vat.status, vat.status),
         "workshopId": vat.workshop_id,
         "workshopName": vat.workshop.name if vat.workshop else "",
+        "weekQualified": qualified_order is not None,
+        "weekQualifiedCode": qualified_order.code if qualified_order else None,
+        "weekQualifiedOn": qualified_order.issuedOn.isoformat()
+        if qualified_order
+        else None,
         "lastRedox": float(latest.redoxMv) if latest and latest.redoxMv is not None else None,
         "lastMeters": float(latest.clothMeters) if latest else None,
         "lastDippedAt": latest.dippedAt.strftime("%Y-%m-%d %H:%M") if latest else None,
@@ -102,11 +111,27 @@ def _bay_context(
         .order_by(Vat.code)
         .all()
     )
+    today = datetime.now().date()
+    week_start = natural_week_start(today)
+    week_orders = (
+        db.query(ReductionMixOrder)
+        .filter(
+            ReductionMixOrder.issuedOn >= week_start,
+            ReductionMixOrder.issuedOn <= today,
+            ReductionMixOrder.passed.is_(True),
+            ReductionMixOrder.voided.is_(False),
+        )
+        .order_by(ReductionMixOrder.issuedOn.desc(), ReductionMixOrder.id.desc())
+        .all()
+    )
+    latest_qualified_by_vat: dict = {}
+    for order in week_orders:
+        latest_qualified_by_vat.setdefault(order.vat_id, order)
     return {
         "request": request,
         "user": user,
         "workshops": [{"id": w.id, "name": w.name, "region": w.region} for w in workshops],
-        "vats": [_vat_payload(v) for v in vats],
+        "vats": [_vat_payload(v, latest_qualified_by_vat.get(v.id)) for v in vats],
         "filter_workshop": workshop_id,
         "selected_vat": selected_vat,
         "error": error,
@@ -151,7 +176,7 @@ async def bay_vat_status(
     error = None
     try:
         latest = item.latest_lot()
-        validate_vat_status_change(item, status, latest)
+        validate_vat_status_change(db, item, status, latest)
         item.status = status
         db.commit()
         return RedirectResponse(f"/?vat={pk}" + (f"&workshop={ws}" if ws else ""), status_code=303)

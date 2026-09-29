@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Numeric,
@@ -55,6 +56,7 @@ class Vat(Base):
 
     workshop: Mapped["Workshop"] = relationship(back_populates="vats")
     lots: Mapped[list["DipLot"]] = relationship(back_populates="vat")
+    mix_orders: Mapped[list["ReductionMixOrder"]] = relationship(back_populates="vat")
 
     def latest_lot(self) -> Optional["DipLot"]:
         if not self.lots:
@@ -72,3 +74,31 @@ class DipLot(Base):
     redoxMv: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 2), nullable=True)
 
     vat: Mapped["Vat"] = relationship(back_populates="lots")
+
+
+class ReductionMixOrder(Base):
+    """还原母液兑比单：闲置缸进入「还原中」前的合格依据。"""
+
+    __tablename__ = "reduction_mix_orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # 插入 flush 拿到 id 后回填，故先允许 NULL（唯一索引中 NULL 互不冲突，避免并发开单撞空串）
+    code: Mapped[Optional[str]] = mapped_column(String(40), unique=True, nullable=True)
+    vat_id: Mapped[int] = mapped_column(ForeignKey("vats.id", ondelete="CASCADE"))
+    issuedOn: Mapped[date] = mapped_column(Date)
+    motherL: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    waterL: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    passed: Mapped[bool] = mapped_column(Boolean, default=False)
+    chemist: Mapped[str] = mapped_column(String(80))
+    issued_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    voided: Mapped[bool] = mapped_column(Boolean, default=False)
+    voided_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    voided_by_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+
+    vat: Mapped["Vat"] = relationship(back_populates="mix_orders", foreign_keys=[vat_id])
+    issuer: Mapped["User"] = relationship(foreign_keys=[issued_by_id])
+    voider: Mapped[Optional["User"]] = relationship(foreign_keys=[voided_by_id])

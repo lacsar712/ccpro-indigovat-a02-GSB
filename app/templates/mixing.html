@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}还原母液兑比{% endblock %}
+{% block content %}
+<div x-data="mixingPage()">
+  {% if error %}
+  <div class="error-box">{{ error }}</div>
+  {% endif %}
+
+  <div class="panel" style="margin-bottom:1.25rem">
+    <h2>新建还原母液兑比单</h2>
+    <p class="hint">
+      染缸工开单，主管在列表内作废。本自然周（周一 {{ week_start }} 至周日 {{ week_end }}）
+      同一染缸最多保留一张未作废单；周内重复开单将被拒绝并提示已有单号。
+    </p>
+    {% if is_supervisor %}
+    <p class="hint" style="color:#8b1e1e">当前为主管账号：开单仅限染缸工，主管职责是审核与作废。</p>
+    {% else %}
+    <form method="post" action="/mixing/orders" class="mix-form">
+      <div class="mix-form-grid">
+        <label>染缸
+          <select name="vat_id" required>
+            <option value="" disabled {% if not form.vat_id %}selected{% endif %}>请选择染缸</option>
+            {% for v in vats %}
+            <option value="{{ v.id }}" {% if form.vat_id == v.id|string %}selected{% endif %}>
+              {{ v.code }}（{{ v.workshopName }} · {{ v.statusLabel }}）
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>开单日
+          <input type="date" name="issuedOn" required value="{{ form.issuedOn or today }}">
+        </label>
+        <label>母液升
+          <input type="number" name="motherL" step="0.01" min="0.01" required
+                 placeholder="例如 120" value="{{ form.motherL or '' }}">
+        </label>
+        <label>清水升
+          <input type="number" name="waterL" step="0.01" min="0.01" required
+                 placeholder="例如 400" value="{{ form.waterL or '' }}">
+        </label>
+        <label>化验人
+          <input type="text" name="chemist" maxlength="80" required
+                 placeholder="例如 吴化验" value="{{ form.chemist or '' }}">
+        </label>
+        <label class="check-label">
+          <input type="checkbox" name="passed" {% if form.passed %}checked{% endif %}>
+          化验合格
+        </label>
+      </div>
+      <p class="hint" style="margin:0.4rem 0 0.8rem">
+        母液升与清水升均须大于 0，且母液不得超过清水的 40%；不合格单不能作为进还原中的依据。
+      </p>
+      <button type="submit">开具兑比单</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>兑比单列表</h2>
+    <p class="hint">按开单日倒序。作废单保留留痕，但不得再作为合格依据。</p>
+    <div class="table-wrap">
+      <table class="mix-table">
+        <thead>
+          <tr>
+            <th>单号</th>
+            <th>染缸</th>
+            <th>开单日</th>
+            <th>母液升</th>
+            <th>清水升</th>
+            <th>母液占比</th>
+            <th>化验人</th>
+            <th>是否合格</th>
+            <th>开单人</th>
+            <th>状态 / 操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in orders %}
+          <tr class="{% if o.voided %}voided{% elif o.inThisWeek and o.passed %}week-ok{% endif %}">
+            <td>
+              {{ o.code }}
+              {% if o.inThisWeek and not o.voided %}<span class="mini-tag">本周</span>{% endif %}
+            </td>
+            <td>{{ o.vatCode }}<span class="cell-sub">{{ o.workshopName }}</span></td>
+            <td>{{ o.issuedOn }}<span class="cell-sub">第 {{ o.ageDays }} 天</span></td>
+            <td>{{ '%.2f'|format(o.motherL) }}</td>
+            <td>{{ '%.2f'|format(o.waterL) }}</td>
+            <td>{{ o.ratioPct }}%</td>
+            <td>{{ o.chemist }}</td>
+            <td>
+              {% if o.passed %}
+              <span class="pass-tag">合格</span>
+              {% if not o.voided and not o.fresh %}<span class="stale-tag">已逾 5 日</span>{% endif %}
+              {% else %}
+              <span class="fail-tag">不合格</span>
+              {% endif %}
+            </td>
+            <td>{{ o.issuer }}</td>
+            <td>
+              {% if o.voided %}
+              <span class="void-tag">已作废</span>
+              <span class="cell-sub">{{ o.voidedAt }} · {{ o.voider }}</span>
+              {% else %}
+                {% if is_supervisor %}
+                <form method="post" action="/mixing/orders/{{ o.id }}/void" class="void-form"
+                      onsubmit="return confirm('确认作废 {{ o.code }}？作废后不再作为合格依据。');">
+                  <button type="submit" class="void-btn">主管作废</button>
+                </form>
+                {% else %}
+                <span class="cell-sub">有效（作废需主管）</span>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not orders %}
+          <tr><td colspan="10" class="empty-row">尚无兑比单。</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="rule-foot">
+    规则并行：① 自然周（周一 00:00 起算）同一染缸至多一张未作废单，周内重复开单拒绝并指出已有单号；
+    ② 闲置缸改还原中时，须存在<b>本自然周最新合格、未作废</b>的兑比单，且开单日距今不超过 5 个自然日，
+    两条同时满足才放行。绕过兑比专页直接改还原中同样校验；作废单一律不算合格。
+  </p>
+</div>
+
+<style>
+  .mix-form-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.7rem 1rem;
+  }
+  @media (max-width: 780px) { .mix-form-grid { grid-template-columns: 1fr; } }
+  .mix-form .check-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    align-self: end;
+    padding-bottom: 0.55rem;
+  }
+  .mix-form .check-label input { width: auto; margin: 0; }
+  .table-wrap { overflow-x: auto; }
+  .mix-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .mix-table th, .mix-table td {
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid #dde8e6;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .mix-table th {
+    background: #e3eeec;
+    color: #1f4d6b;
+    font-weight: 650;
+  }
+  .mix-table tr.week-ok { background: #f0f9f5; }
+  .mix-table tr.voided { opacity: 0.55; background: #f6f6f6; }
+  .cell-sub { display: block; font-size: 0.74rem; color: #6b7c85; }
+  .mini-tag {
+    margin-left: 0.3rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    background: rgba(31, 77, 107, 0.12);
+    color: #1f4d6b;
+  }
+  .pass-tag, .fail-tag, .void-tag, .stale-tag {
+    display: inline-block;
+    padding: 0.08rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.74rem;
+  }
+  .pass-tag { background: #dff3ea; color: #1a7a5c; border: 1px solid #9fd4c0; }
+  .fail-tag { background: #fdeaea; color: #9a3030; border: 1px solid #f0b4b4; }
+  .void-tag { background: #e8e8e8; color: #555; border: 1px solid #c9c9c9; }
+  .stale-tag { background: #fdf0da; color: #8a5a12; border: 1px solid #ecd3a3; margin-left: 0.3rem; }
+  .void-form { margin: 0; }
+  .void-btn {
+    width: auto;
+    margin: 0;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.78rem;
+    background: #8b3a3a;
+    border-color: #8b3a3a;
+    color: #fff;
+  }
+  .void-btn:hover { background: #6f2d2d; }
+  .empty-row { text-align: center; color: #6b7c85; padding: 1.5rem; }
+</style>
+
+<script>
+  function mixingPage() {
+    return {};
+  }
+</script>
+{% endblock %}

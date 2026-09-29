@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models import DipLot, User, Vat, Workshop
+from app.models import DipLot, ReductionMixOrder, User, Vat, Workshop
 
 _PWD_SALT = os.environ.get("PWD_SALT", "indigovat-dev-salt").encode("utf-8")
 
@@ -140,4 +140,39 @@ def ensure_seed_data(db: Session) -> None:
             ],
         )
     )
+
+    worker = db.query(User).filter_by(username="worker").first()
+    admin = db.query(User).filter_by(username="admin").first()
+    today = now.date()
+    # 本周内向前 2 天（周一退到周一、周二退到周一），保证合格单始终落在本自然周
+    fresh_days_ago = min(2, today.weekday())
+
+    def mix_order(vat_id, days_ago, mother, water, passed, chemist, voided=False):
+        return ReductionMixOrder(
+            vat_id=vat_id,
+            issuedOn=today - timedelta(days=days_ago),
+            motherL=Decimal(mother),
+            waterL=Decimal(water),
+            passed=passed,
+            chemist=chemist,
+            issued_by_id=worker.id,
+            voided=voided,
+            voided_at=now - timedelta(days=max(days_ago - 1, 0)) if voided else None,
+            voided_by_id=admin.id if voided else None,
+        )
+
+    # V-01 还原中：本周一张新鲜合格单（本自然周内 0~2 天前），可作合格依据演示
+    # V-11 还原中：合格单开于 8 天前（已逾 5 日且不在本自然周）
+    # V-12 可染色：上周一张合格单 + 一张被主管作废的不合格单
+    # V-02 闲置：故意不种任何兑比单，闲置且无合格单
+    seeded_orders = [
+        mix_order(v1.id, fresh_days_ago, "120.00", "400.00", True, "吴化验"),
+        mix_order(v3.id, 8, "100.00", "300.00", True, "吴化验"),
+        mix_order(v4.id, 9, "150.00", "450.00", True, "陈化验"),
+        mix_order(v4.id, 12, "200.00", "400.00", False, "陈化验", voided=True),
+    ]
+    for order in seeded_orders:
+        db.add(order)
+        db.flush()  # 先拿到 id，再回填单号，避免多条空单号冲突
+        order.code = f"DM-{order.issuedOn.strftime('%Y%m%d')}-{order.id:04d}"
     db.commit()
